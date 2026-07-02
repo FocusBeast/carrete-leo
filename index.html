@@ -3,254 +3,405 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>🍻 Carrete del Gordo Leo</title>
+<title>🐷 Junta Porcina</title>
 <!--
   ============================================================
-  CARRETE DEL GORDO LEO — Juego multijugador en tiempo real
+  JUNTA PORCINA v2 — Juego multijugador de conversación/carrete
   ------------------------------------------------------------
-  Arquitectura (documentada 2026-07-02):
-  - Single-file HTML, mobile-first, sin build step.
-  - Multijugador vía Supabase Realtime (Broadcast + Presence).
-    NO usa base de datos: solo canales efímeros por sala.
-  - Modelo host-autoritativo: el celular que CREA la sala
-    dirige el estado del juego y lo transmite a todos.
-  - La publishable key de Supabase es pública por diseño
-    (solo permite realtime broadcast, sin acceso a datos).
-  Modos de juego:
-  1. MAS_PROBABLE : todos votan por un jugador → el más votado toma.
-  2. YO_NUNCA     : cada uno confiesa → los que sí, toman.
-  3. CASTIGO      : cartas especiales del cumpleañero (Gordo Leo).
+  Cambios v2 (2026-07-02, feedback usuario):
+  - Branding genérico "Junta Porcina" (sin referencias al cumpleañero)
+  - Pantalla de configuración: elegir modos de juego, nivel de
+    picante y preguntas propias del grupo
+  - Instrucción clara en CADA ronda (dinámica entendible)
+  - Frontend rediseñado: tipografía Baloo 2, tema rosa porcino,
+    animaciones, barra de progreso de votos, confetti en reveal
+  Arquitectura (igual v1, probada):
+  - Single-file HTML + Supabase Realtime (Broadcast + Presence)
+  - Host-autoritativo: quien crea la sala dirige las rondas
+  - Sin base de datos para el juego: canales efímeros
   ============================================================
 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
 <style>
-  /* ==================== ESTILOS BASE ==================== */
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   :root {
-    --bg:#0d0b1e; --card:#1a1633; --card2:#241d47;
-    --neon:#ff2e88; --neon2:#00e5ff; --gold:#ffd24a;
-    --txt:#f5f2ff; --dim:#9b93c9; --ok:#3ddc84; --danger:#ff5252;
+    --bg:#17091f; --bg2:#2a1038; --card:#241030; --card2:#33173f;
+    --rosa:#ff4fa3; --rosa2:#ff8fc6; --lila:#b06bff; --cian:#3be8e0; --oro:#ffd24a;
+    --txt:#fdf3fa; --dim:#b99cc9; --danger:#ff5252; --ok:#3ddc84;
+    --borde:#4a2560;
   }
   html,body { height:100%; }
   body {
-    background:radial-gradient(circle at 20% 10%, #241d47 0%, var(--bg) 60%);
-    color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif;
+    background:
+      radial-gradient(ellipse at 80% -10%, rgba(176,107,255,.25) 0%, transparent 55%),
+      radial-gradient(ellipse at 10% 110%, rgba(255,79,163,.18) 0%, transparent 55%),
+      var(--bg);
+    color:var(--txt); font-family:'Baloo 2','Segoe UI',system-ui,sans-serif;
     display:flex; flex-direction:column; align-items:center;
-    min-height:100dvh; padding:16px; overflow-x:hidden;
+    min-height:100dvh; padding:14px; overflow-x:hidden;
   }
-  .wrap { width:100%; max-width:440px; display:flex; flex-direction:column; gap:14px; flex:1; }
-  h1 { font-size:1.5rem; text-align:center; line-height:1.25;
-       background:linear-gradient(90deg,var(--neon),var(--gold),var(--neon2));
-       -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .sub { text-align:center; color:var(--dim); font-size:.85rem; }
-  .card { background:var(--card); border:1px solid #332a5e; border-radius:18px; padding:18px; }
+  .wrap { width:100%; max-width:450px; display:flex; flex-direction:column; gap:12px; flex:1; }
+  .logo { text-align:center; font-size:2rem; font-weight:800; line-height:1.1; letter-spacing:.5px;
+          background:linear-gradient(95deg,var(--rosa) 20%,var(--lila) 60%,var(--cian));
+          -webkit-background-clip:text; background-clip:text; color:transparent;
+          filter:drop-shadow(0 2px 12px rgba(255,79,163,.35)); }
+  .logo .pig { font-size:2.6rem; display:block; filter:none; animation:float 3s ease-in-out infinite; }
+  @keyframes float { 0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-7px) rotate(4deg)} }
+  .sub { text-align:center; color:var(--dim); font-size:.9rem; }
+  .card { background:var(--card); border:1.5px solid var(--borde); border-radius:20px; padding:18px;
+          box-shadow:0 8px 28px rgba(0,0,0,.35); }
+  h2 { font-size:1.05rem; font-weight:800; color:var(--rosa2); margin-bottom:10px; }
   .btn {
-    display:block; width:100%; padding:15px; border:none; border-radius:14px;
-    font-size:1.05rem; font-weight:700; color:#fff; cursor:pointer;
-    background:linear-gradient(135deg,var(--neon),#b0186a);
-    box-shadow:0 4px 18px rgba(255,46,136,.35); transition:transform .08s;
+    display:block; width:100%; padding:15px; border:none; border-radius:16px;
+    font-family:inherit; font-size:1.08rem; font-weight:800; color:#fff; cursor:pointer;
+    background:linear-gradient(135deg,var(--rosa),#c22d78);
+    box-shadow:0 5px 20px rgba(255,79,163,.4), inset 0 1px 0 rgba(255,255,255,.25);
+    transition:transform .08s;
   }
-  .btn:active { transform:scale(.97); }
-  .btn.alt { background:linear-gradient(135deg,var(--neon2),#0077b6); box-shadow:0 4px 18px rgba(0,229,255,.25); }
-  .btn.ghost { background:transparent; border:2px solid #443a7a; box-shadow:none; color:var(--dim); }
-  .btn.gold { background:linear-gradient(135deg,var(--gold),#e09b00); color:#241d00; box-shadow:0 4px 18px rgba(255,210,74,.3); }
-  .btn:disabled { opacity:.45; pointer-events:none; }
-  input {
-    width:100%; padding:14px; border-radius:12px; border:2px solid #443a7a;
-    background:var(--card2); color:var(--txt); font-size:1.1rem; text-align:center;
-    text-transform:uppercase; letter-spacing:2px; outline:none;
+  .btn:active { transform:scale(.96); }
+  .btn.alt { background:linear-gradient(135deg,var(--lila),#7a3bd6); box-shadow:0 5px 20px rgba(176,107,255,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+  .btn.oro { background:linear-gradient(135deg,var(--oro),#e8a200); color:#3a2600; box-shadow:0 5px 20px rgba(255,210,74,.35), inset 0 1px 0 rgba(255,255,255,.4); }
+  .btn.ghost { background:transparent; border:2px solid var(--borde); box-shadow:none; color:var(--dim); font-weight:700; }
+  .btn:disabled { opacity:.4; pointer-events:none; }
+  input, textarea {
+    width:100%; padding:14px; border-radius:14px; border:2px solid var(--borde);
+    background:var(--card2); color:var(--txt); font-family:inherit; font-size:1.05rem;
+    text-align:center; outline:none; transition:border-color .15s;
   }
-  input:focus { border-color:var(--neon2); }
-  input.name { text-transform:none; letter-spacing:normal; }
-  .code-big { font-size:2.6rem; font-weight:900; text-align:center; letter-spacing:.5rem;
-              color:var(--gold); text-shadow:0 0 24px rgba(255,210,74,.5); }
+  input:focus, textarea:focus { border-color:var(--rosa); }
+  input.codigo { text-transform:uppercase; letter-spacing:6px; font-weight:800; }
+  textarea { text-align:left; font-size:.92rem; min-height:74px; resize:vertical; }
+  .opcion-toggle { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px;
+                   border:2px solid var(--borde); background:var(--card2); cursor:pointer; margin-bottom:8px;
+                   transition:border-color .15s, background .15s; }
+  .opcion-toggle.on { border-color:var(--rosa); background:rgba(255,79,163,.12); }
+  .opcion-toggle .emoji { font-size:1.5rem; }
+  .opcion-toggle .info { flex:1; }
+  .opcion-toggle .nombre { font-weight:800; font-size:.98rem; }
+  .opcion-toggle .desc { color:var(--dim); font-size:.78rem; line-height:1.25; }
+  .opcion-toggle .check { font-size:1.2rem; opacity:.25; }
+  .opcion-toggle.on .check { opacity:1; }
+  .nivel-row { display:flex; gap:8px; }
+  .nivel { flex:1; text-align:center; padding:11px 4px; border-radius:14px; border:2px solid var(--borde);
+           background:var(--card2); cursor:pointer; font-weight:800; font-size:.88rem; transition:all .15s; }
+  .nivel.on { border-color:var(--oro); background:rgba(255,210,74,.14); color:var(--oro); }
+  .code-big { font-size:3rem; font-weight:800; text-align:center; letter-spacing:.55rem;
+              color:var(--oro); text-shadow:0 0 28px rgba(255,210,74,.55); }
   .players { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
-  .chip { background:var(--card2); border:1px solid #443a7a; border-radius:999px;
-          padding:7px 14px; font-size:.9rem; animation:pop .25s ease; }
-  .chip.me { border-color:var(--neon2); }
-  @keyframes pop { from{transform:scale(.5);opacity:0} to{transform:scale(1);opacity:1} }
-  .qtype { text-align:center; font-size:.75rem; font-weight:800; letter-spacing:2px;
-           text-transform:uppercase; padding:6px 12px; border-radius:999px; margin:0 auto; width:fit-content; }
-  .qtype.mp { background:rgba(255,46,136,.15); color:var(--neon); }
-  .qtype.yn { background:rgba(0,229,255,.12); color:var(--neon2); }
-  .qtype.cs { background:rgba(255,210,74,.15); color:var(--gold); }
-  .question { font-size:1.35rem; font-weight:800; text-align:center; line-height:1.35; padding:6px 0; }
-  .opts { display:flex; flex-direction:column; gap:10px; }
+  .chip { background:var(--card2); border:1.5px solid var(--borde); border-radius:999px;
+          padding:8px 15px; font-size:.92rem; font-weight:700; animation:pop .3s cubic-bezier(.5,1.8,.6,1); }
+  .chip.me { border-color:var(--cian); color:var(--cian); }
+  @keyframes pop { from{transform:scale(.3);opacity:0} to{transform:scale(1);opacity:1} }
+  .pasos { display:flex; flex-direction:column; gap:9px; }
+  .paso { display:flex; gap:10px; align-items:flex-start; font-size:.86rem; color:var(--dim); line-height:1.35; }
+  .paso b { color:var(--txt); }
+  .paso .n { background:var(--rosa); color:#fff; min-width:22px; height:22px; border-radius:50%;
+             display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:800; }
+  .top-bar { display:flex; justify-content:space-between; align-items:center; font-size:.8rem; color:var(--dim); }
+  .qtype { text-align:center; font-size:.72rem; font-weight:800; letter-spacing:2.5px;
+           text-transform:uppercase; padding:7px 16px; border-radius:999px; margin:0 auto; width:fit-content; }
+  .qtype.mp { background:rgba(255,79,163,.16); color:var(--rosa2); border:1px solid rgba(255,79,163,.4); }
+  .qtype.yn { background:rgba(59,232,224,.12); color:var(--cian); border:1px solid rgba(59,232,224,.35); }
+  .qtype.rt { background:rgba(255,210,74,.14); color:var(--oro); border:1px solid rgba(255,210,74,.4); }
+  .question { font-size:1.4rem; font-weight:800; text-align:center; line-height:1.3; padding:4px 2px;
+              animation:slideIn .35s ease; }
+  @keyframes slideIn { from{transform:translateY(14px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .instruccion { text-align:center; color:var(--dim); font-size:.85rem; padding:2px 8px; line-height:1.35; }
+  .opts { display:flex; flex-direction:column; gap:9px; }
   .opt {
-    padding:14px; border-radius:12px; border:2px solid #443a7a; background:var(--card2);
-    color:var(--txt); font-size:1rem; font-weight:600; cursor:pointer; text-align:center;
+    padding:14px; border-radius:14px; border:2px solid var(--borde); background:var(--card2);
+    color:var(--txt); font-family:inherit; font-size:1.02rem; font-weight:700; cursor:pointer;
+    text-align:center; transition:all .12s;
   }
-  .opt.sel { border-color:var(--neon); background:rgba(255,46,136,.15); }
+  .opt:active { transform:scale(.97); }
+  .opt.sel { border-color:var(--rosa); background:rgba(255,79,163,.16); }
+  .progreso { margin-top:4px; }
+  .progreso-track { background:var(--card2); border-radius:99px; height:10px; overflow:hidden; }
+  .progreso-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,var(--cian),var(--rosa));
+                   transition:width .5s ease; }
+  .progreso-txt { text-align:center; color:var(--dim); font-size:.78rem; margin-top:5px; }
   .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
-  .bar-name { width:92px; font-size:.85rem; text-align:right; overflow:hidden;
+  .bar-name { width:95px; font-size:.88rem; font-weight:700; text-align:right; overflow:hidden;
               text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
-  .bar-track { flex:1; background:var(--card2); border-radius:8px; height:26px; overflow:hidden; }
-  .bar-fill { height:100%; border-radius:8px; background:linear-gradient(90deg,var(--neon2),var(--neon));
-              display:flex; align-items:center; justify-content:flex-end; padding-right:8px;
-              font-size:.8rem; font-weight:800; min-width:24px; transition:width .6s ease; }
-  .castigo { text-align:center; font-size:1.05rem; font-weight:800; color:var(--gold);
-             padding:12px; border:2px dashed rgba(255,210,74,.4); border-radius:14px; }
+  .bar-track { flex:1; background:var(--card2); border-radius:9px; height:27px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:9px; background:linear-gradient(90deg,var(--lila),var(--rosa));
+              display:flex; align-items:center; justify-content:flex-end; padding-right:9px;
+              font-size:.82rem; font-weight:800; min-width:26px; transition:width .7s cubic-bezier(.2,.8,.3,1); }
+  .castigo { text-align:center; font-size:1.08rem; font-weight:800; color:var(--oro);
+             padding:13px; border:2px dashed rgba(255,210,74,.45); border-radius:16px;
+             background:rgba(255,210,74,.06); animation:pop .4s cubic-bezier(.5,1.8,.6,1); }
+  .reto-card { text-align:center; font-size:1.05rem; font-weight:700; color:var(--oro); line-height:1.4;
+               padding:14px; }
   .waiting { text-align:center; color:var(--dim); font-size:.9rem; animation:pulse 1.4s infinite; }
-  @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
-  .footer { text-align:center; color:#57508a; font-size:.72rem; margin-top:auto; padding-top:10px; }
-  .roundnum { text-align:center; color:var(--dim); font-size:.78rem; }
+  @keyframes pulse { 0%,100%{opacity:.45} 50%{opacity:1} }
+  .footer { text-align:center; color:#6b5580; font-size:.72rem; margin-top:auto; padding-top:10px; }
   .hidden { display:none !important; }
-  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
-           background:var(--danger); color:#fff; padding:10px 18px; border-radius:10px;
-           font-size:.85rem; z-index:99; box-shadow:0 4px 20px rgba(0,0,0,.5); }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+           background:var(--danger); color:#fff; padding:11px 20px; border-radius:12px; font-weight:700;
+           font-size:.88rem; z-index:99; box-shadow:0 6px 24px rgba(0,0,0,.5); animation:pop .25s; }
+  .btn-ayuda { position:fixed; top:12px; right:12px; width:38px; height:38px; border-radius:50%;
+               border:2px solid var(--borde); background:var(--card); color:var(--dim); font-size:1.1rem;
+               font-weight:800; cursor:pointer; z-index:50; }
+  .modal-bg { position:fixed; inset:0; background:rgba(10,4,15,.8); z-index:90;
+              display:flex; align-items:center; justify-content:center; padding:20px; }
+  .modal { max-width:420px; width:100%; max-height:80dvh; overflow-y:auto; }
+  .confetti { position:fixed; top:-30px; font-size:1.4rem; z-index:80; pointer-events:none;
+              animation:caer linear forwards; }
+  @keyframes caer { to { transform:translateY(110dvh) rotate(720deg); opacity:.7; } }
 </style>
 </head>
 <body>
+<button class="btn-ayuda" onclick="Game.ayuda(true)">?</button>
+
 <div class="wrap">
 
-  <!-- ==================== PANTALLA: INICIO ==================== -->
   <div id="scr-home">
-    <h1>🍻 Carrete del<br>Gordo Leo 🎂</h1>
-    <p class="sub" style="margin:10px 0 22px">Multijugador · cada uno desde su celular</p>
+    <div class="logo" style="margin:18px 0 4px"><span class="pig">🐷</span>JUNTA PORCINA</div>
+    <p class="sub" style="margin-bottom:18px">El juego pa' la junta · cada uno desde su celu</p>
     <div class="card" style="display:flex; flex-direction:column; gap:12px">
-      <input id="inp-name" class="name" maxlength="14" placeholder="Tu nombre / apodo">
-      <button class="btn" onclick="Game.crearSala()">🎉 Crear sala</button>
-      <div style="display:flex; gap:8px; align-items:center">
-        <input id="inp-code" maxlength="4" placeholder="CÓDIGO" style="flex:1">
-        <button class="btn alt" style="width:44%" onclick="Game.unirseSala()">Entrar</button>
+      <input id="inp-name" maxlength="14" placeholder="Tu nombre o apodo">
+      <button class="btn" onclick="Game.crearSala()">🐽 Crear una sala</button>
+      <div style="display:flex; align-items:center; gap:10px; color:var(--dim); font-size:.8rem">
+        <div style="flex:1; height:1px; background:var(--borde)"></div>o únete a una
+        <div style="flex:1; height:1px; background:var(--borde)"></div>
+      </div>
+      <div style="display:flex; gap:8px">
+        <input id="inp-code" class="codigo" maxlength="4" placeholder="CÓDIGO" style="flex:1">
+        <button class="btn alt" style="width:42%" onclick="Game.unirseSala()">Entrar</button>
       </div>
     </div>
+    <p class="sub" style="font-size:.78rem">Sin descargas · sin cuentas · solo risas y castigos</p>
   </div>
 
-  <!-- ==================== PANTALLA: LOBBY ==================== -->
-  <div id="scr-lobby" class="hidden">
-    <h1>Sala lista 🔥</h1>
-    <p class="sub">Pasa este código a los demás:</p>
-    <div class="code-big" id="lobby-code"></div>
+  <div id="scr-config" class="hidden">
+    <div class="logo" style="font-size:1.4rem">🐷 Arma tu junta</div>
     <div class="card">
-      <p class="sub" style="margin-bottom:10px">Conectados (<span id="lobby-count">0</span>):</p>
+      <h2>1 · ¿Qué juegos entran?</h2>
+      <div class="opcion-toggle on" data-modo="MP" onclick="Game.toggleModo(this)">
+        <span class="emoji">👉</span>
+        <div class="info"><div class="nombre">¿Quién es más probable?</div>
+        <div class="desc">Todos votan por alguien del grupo. El más votado, toma.</div></div>
+        <span class="check">✅</span>
+      </div>
+      <div class="opcion-toggle on" data-modo="YN" onclick="Game.toggleModo(this)">
+        <span class="emoji">🙊</span>
+        <div class="info"><div class="nombre">Yo Nunca</div>
+        <div class="desc">Cada uno confiesa en secreto y se revela quién sí lo hizo.</div></div>
+        <span class="check">✅</span>
+      </div>
+      <div class="opcion-toggle on" data-modo="RT" onclick="Game.toggleModo(this)">
+        <span class="emoji">🔥</span>
+        <div class="info"><div class="nombre">Retos</div>
+        <div class="desc">Desafíos para cumplir en grupo. Nadie se salva.</div></div>
+        <span class="check">✅</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>2 · Nivel de picante</h2>
+      <div class="nivel-row">
+        <div class="nivel" data-nivel="1" onclick="Game.setNivel(this)">😇<br>Suave</div>
+        <div class="nivel on" data-nivel="2" onclick="Game.setNivel(this)">😏<br>Atrevido</div>
+        <div class="nivel" data-nivel="3" onclick="Game.setNivel(this)">🌶️<br>Sin filtro</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>3 · Preguntas del grupo <span style="color:var(--dim);font-weight:500;font-size:.78rem">(opcional)</span></h2>
+      <textarea id="inp-custom" placeholder="Escribe tus propias '¿Quién es más probable...?' — una por línea.&#10;Ej: ¿Quién es más probable que pague al último?"></textarea>
+    </div>
+    <button class="btn oro" onclick="Game.abrirSala()">🚪 Abrir la sala</button>
+  </div>
+
+  <div id="scr-lobby" class="hidden">
+    <div class="logo" style="font-size:1.3rem">🐷 Sala abierta</div>
+    <div class="card" style="text-align:center">
+      <p class="sub">Compartan este código pa' entrar:</p>
+      <div class="code-big" id="lobby-code"></div>
+    </div>
+    <div class="card">
+      <h2>Chanchos conectados (<span id="lobby-count">0</span>)</h2>
       <div class="players" id="lobby-players"></div>
     </div>
-    <button class="btn gold hidden" id="btn-start" onclick="Game.hostStart()">🚀 ¡Partir el juego!</button>
-    <p class="waiting" id="lobby-wait">Esperando que el anfitrión parta el juego...</p>
+    <div class="card">
+      <h2>¿Cómo se juega?</h2>
+      <div class="pasos">
+        <div class="paso"><span class="n">1</span><span>Cada ronda aparece <b>la misma carta en todos los celulares</b>.</span></div>
+        <div class="paso"><span class="n">2</span><span>Todos <b>votan o confiesan</b> desde su celu. La barra muestra cuántos van.</span></div>
+        <div class="paso"><span class="n">3</span><span>Se revela el resultado con <b>quién toma o qué reto cumplir</b>.</span></div>
+        <div class="paso"><span class="n">4</span><span>El anfitrión pasa a la siguiente ronda. ¡Eso es todo!</span></div>
+      </div>
+    </div>
+    <button class="btn oro hidden" id="btn-start" onclick="Game.hostStart()">🚀 ¡Empezar!</button>
+    <p class="waiting" id="lobby-wait">Esperando que el anfitrión empiece...</p>
   </div>
 
-  <!-- ==================== PANTALLA: JUEGO ==================== -->
   <div id="scr-game" class="hidden">
-    <p class="roundnum" id="g-round"></p>
+    <div class="top-bar">
+      <span id="g-round"></span>
+      <span>🐷 Sala <b id="g-sala"></b> · <span id="g-nplayers"></span> 🐽</span>
+    </div>
     <div class="qtype" id="g-type"></div>
     <p class="question" id="g-question"></p>
+    <p class="instruccion" id="g-instruccion"></p>
     <div class="card">
       <div class="opts" id="g-opts"></div>
       <div id="g-results" class="hidden"></div>
-      <p class="waiting hidden" id="g-wait"></p>
+      <div id="g-reto" class="reto-card hidden"></div>
+      <div class="progreso hidden" id="g-progreso">
+        <div class="progreso-track"><div class="progreso-fill" id="g-progreso-fill" style="width:0%"></div></div>
+        <p class="progreso-txt" id="g-progreso-txt"></p>
+      </div>
     </div>
     <div class="castigo hidden" id="g-castigo"></div>
     <button class="btn hidden" id="btn-next" onclick="Game.hostNext()">Siguiente ronda ➜</button>
-    <button class="btn ghost hidden" id="btn-reveal" onclick="Game.hostReveal(true)">Revelar ya (faltan votos)</button>
+    <button class="btn ghost hidden" id="btn-reveal" onclick="Game.hostReveal(true)">Revelar ya ⏱️</button>
+    <p class="waiting hidden" id="g-host-wait">El anfitrión pasa a la siguiente ronda...</p>
   </div>
 
-  <p class="footer">Hecho con IA para el cumple del Gordo Leo · 2026</p>
+  <div id="modal-ayuda" class="modal-bg hidden" onclick="Game.ayuda(false)">
+    <div class="card modal" onclick="event.stopPropagation()">
+      <h2>🐷 ¿Cómo funciona Junta Porcina?</h2>
+      <div class="pasos">
+        <div class="paso"><span class="n">1</span><span><b>Uno crea la sala</b>, elige los juegos y el picante, y comparte el código de 4 letras.</span></div>
+        <div class="paso"><span class="n">2</span><span>Los demás entran con el código <b>desde su propio celular</b>.</span></div>
+        <div class="paso"><span class="n">3</span><span><b>👉 ¿Quién es más probable?</b> → votas por alguien del grupo. El más votado toma.</span></div>
+        <div class="paso"><span class="n">4</span><span><b>🙊 Yo Nunca</b> → confiesas en secreto si lo has hecho. Se revela quién sí. Los que sí, toman.</span></div>
+        <div class="paso"><span class="n">5</span><span><b>🔥 Retos</b> → desafíos grupales. Se cumplen y se sigue.</span></div>
+        <div class="paso"><span class="n">6</span><span>El anfitrión controla el ritmo con "Siguiente ronda". Si alguien se duerme votando, puede revelar antes.</span></div>
+      </div>
+      <button class="btn" style="margin-top:14px" onclick="Game.ayuda(false)">¡Cachái! 👌</button>
+    </div>
+  </div>
+
+  <p class="footer">Junta Porcina 🐷 · hecho con IA · 2026</p>
 </div>
 
 <script>
-/* ============================================================
-   CONFIGURACIÓN — Supabase Realtime (solo broadcast, sin DB)
-   ============================================================ */
 const SUPABASE_URL = 'https://syyjhuvbxoardigltahi.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Hx7xbW3Z03U9Yv-CZmyQLA_j62dCiHh'; // clave pública por diseño
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* ============================================================
-   MAZO DE PREGUNTAS — sin filtro, humor chileno 28-35 años
-   Tipos: MP = ¿Quién es más probable?  YN = Yo Nunca  CS = Castigo
-   {LEO} se reemplaza por el nombre del cumpleañero.
-   ============================================================ */
-const DECK = [
-  // ---- ¿Quién es más probable...? ----
-  { t:'MP', q:'¿Quién es más probable que termine llorando abrazado al Gordo Leo esta noche?' },
-  { t:'MP', q:'¿Quién es más probable que le escriba a su ex después de esta junta?' },
-  { t:'MP', q:'¿Quién es más probable que se quede dormido primero hoy?' },
-  { t:'MP', q:'¿Quién es más probable que haya stalkeado a alguien de este grupo?' },
-  { t:'MP', q:'¿Quién es más probable que termine bailando arriba de la mesa?' },
-  { t:'MP', q:'¿Quién es más probable que mienta en su Tinder/Bumble?' },
-  { t:'MP', q:'¿Quién es más probable que se haya arrancado de un carrete sin despedirse (irse a la francesa)?' },
-  { t:'MP', q:'¿Quién es más probable que gaste la plata del arriendo en una tontera?' },
-  { t:'MP', q:'¿Quién es más probable que termine peleando con un guardia de disco?' },
-  { t:'MP', q:'¿Quién es más probable que sea funado en Twitter/X?' },
-  { t:'MP', q:'¿Quién es más probable que vomite primero esta noche?' },
-  { t:'MP', q:'¿Quién es más probable que tenga un romance secreto ahora mismo?' },
-  { t:'MP', q:'¿Quién es más probable que le pida plata prestada al grupo y nunca pague?' },
-  { t:'MP', q:'¿Quién es más probable que se case primero (o de nuevo)?' },
-  { t:'MP', q:'¿Quién es más probable que mande un audio de 8 minutos borracho?' },
-  { t:'MP', q:'¿Quién es más probable que se haya comido algo del suelo esta semana?' },
-  { t:'MP', q:'¿Quién es más probable que pierda el celular esta noche?' },
-  { t:'MP', q:'¿Quién es más probable que hable mal del grupo en otro grupo de WhatsApp?' },
-  { t:'MP', q:'¿Quién es más probable que se enamore de alguien en la primera cita?' },
-  { t:'MP', q:'¿Quién es más probable que termine preso por una tontera?' },
-  { t:'MP', q:'¿Quién es más probable que se compre algo carísimo estando curado?' },
-  { t:'MP', q:'¿Quién tiene el historial de navegación más turbio?' },
-  { t:'MP', q:'¿Quién es más probable que llegue 2 horas tarde a su propio matrimonio?' },
-  { t:'MP', q:'¿Quién es más probable que se haga famoso en TikTok por accidente?' },
-  { t:'MP', q:'¿Quién es más probable que le mienta al doctor sobre cuánto toma?' },
-  { t:'MP', q:'¿Quién es más probable que tenga hijos regados que no conoce?' },
-  { t:'MP', q:'¿Quién sobreviviría menos en un apocalipsis zombie?' },
-  { t:'MP', q:'¿Quién es más probable que se quede pegado en la casa del carrete hasta el otro día de puro sapo?' },
-  { t:'MP', q:'¿Quién es más probable que llore viendo una película romántica a escondidas?' },
-  { t:'MP', q:'¿Quién manda las peores indirectas por estados de WhatsApp?' },
-  // ---- Yo Nunca (los que SÍ lo han hecho, toman) ----
-  { t:'YN', q:'Yo nunca he mandado un mensaje caliente al chat equivocado.' },
-  { t:'YN', q:'Yo nunca he fingido estar enfermo para no ir a trabajar después de un carrete.' },
-  { t:'YN', q:'Yo nunca he stalkeado al ex de mi pareja.' },
-  { t:'YN', q:'Yo nunca he besado a alguien de este grupo.' },
-  { t:'YN', q:'Yo nunca he manejado sabiendo que no debía.' },
-  { t:'YN', q:'Yo nunca me he arrancado sin pagar de un local.' },
-  { t:'YN', q:'Yo nunca he llorado en el baño de una disco.' },
-  { t:'YN', q:'Yo nunca he tenido un peor es na\'.' },
-  { t:'YN', q:'Yo nunca he mentido en esta misma noche.' },
-  { t:'YN', q:'Yo nunca he revisado el celular de mi pareja a escondidas.' },
-  { t:'YN', q:'Yo nunca he vuelto con un ex sabiendo que era mala idea.' },
-  { t:'YN', q:'Yo nunca he hecho ghosting.' },
-  { t:'YN', q:'Yo nunca me he quedado dormido en plena previa.' },
-  { t:'YN', q:'Yo nunca he despertado en una casa que no conocía.' },
-  { t:'YN', q:'Yo nunca he coqueteado para conseguir algo gratis.' },
-  { t:'YN', q:'Yo nunca he hablado mal de alguien presente en esta sala.' },
-  { t:'YN', q:'Yo nunca he borrado una foto/historia porque mi pareja se enojó.' },
-  { t:'YN', q:'Yo nunca he perdido una pelea que yo mismo empecé.' },
-  { t:'YN', q:'Yo nunca he usado la cuenta de Netflix de un ex.' },
-  { t:'YN', q:'Yo nunca he dicho "te amo" sin sentirlo.' },
-  { t:'YN', q:'Yo nunca he vomitado en un auto ajeno.' },
-  { t:'YN', q:'Yo nunca he tenido algo con alguien del trabajo.' },
-  { t:'YN', q:'Yo nunca he pedido plata prestada para carretear.' },
-  { t:'YN', q:'Yo nunca me he metido con alguien mucho mayor o mucho menor (legal, tranquilos).' },
-  { t:'YN', q:'Yo nunca he fingido que me gustaba un regalo.' },
-  // ---- Cartas Castigo del cumpleañero ----
-  { t:'CS', q:'🎂 ¡TODOS toman por el cumpleaños del Gordo Leo! Salud, perros.' },
-  { t:'CS', q:'👑 El Gordo Leo elige a UNA persona para que se mande un shot ahora ya.' },
-  { t:'CS', q:'📱 El último que muestre su galería de fotos (última foto) al grupo, toma doble.' },
-  { t:'CS', q:'🗣️ Cada uno dice su mejor recuerdo con el Gordo Leo. El más fome, toma.' },
-  { t:'CS', q:'🎤 El Gordo Leo elige a alguien para que cante 30 segundos de una canción. Si se niega, toma triple.' },
-  { t:'CS', q:'🔄 Cambio de asientos: todos se mueven un puesto a la derecha y el Gordo Leo reparte 3 tragos como quiera.' },
-  { t:'CS', q:'🤳 Selfie grupal obligatoria AHORA. El que salga peor (decide Leo), toma.' },
-  { t:'CS', q:'⏱️ Piedra, papel o tijera contra el Gordo Leo. Desafíalo el que esté a su izquierda. El que pierde, toma.' },
-];
+/* MAZOS por tipo y nivel (1 suave, 2 atrevido, 3 sin filtro; acumulativos) */
+const MAZOS = {
+  MP: {
+    1: [
+      '¿Quién es más probable que se quede dormido primero hoy?',
+      '¿Quién es más probable que llegue 2 horas tarde a su propio matrimonio?',
+      '¿Quién sobreviviría menos en un apocalipsis zombie?',
+      '¿Quién es más probable que se haga famoso en TikTok por accidente?',
+      '¿Quién es más probable que pierda el celular esta noche?',
+      '¿Quién es más probable que llore viendo una película romántica?',
+      '¿Quién es más probable que gaste la plata del arriendo en una tontera?',
+      '¿Quién es más probable que se coma algo del suelo?',
+      '¿Quién manda los audios más largos e innecesarios?',
+      '¿Quién es más probable que termine bailando arriba de la mesa?',
+      '¿Quién es más probable que se pierda yendo a un lugar con GPS?',
+      '¿Quién tiene la peor suerte del grupo?',
+    ],
+    2: [
+      '¿Quién es más probable que le escriba a su ex después de esta junta?',
+      '¿Quién es más probable que haya stalkeado a alguien de este grupo?',
+      '¿Quién es más probable que mienta en su Tinder/Bumble?',
+      '¿Quién es más probable que se arranque del carrete sin despedirse?',
+      '¿Quién es más probable que mande un audio de 8 minutos borracho?',
+      '¿Quién es más probable que hable mal del grupo en otro grupo de WhatsApp?',
+      '¿Quién es más probable que se enamore en la primera cita?',
+      '¿Quién es más probable que se compre algo carísimo estando curado?',
+      '¿Quién es más probable que le mienta al doctor sobre cuánto toma?',
+      '¿Quién manda las peores indirectas por estados de WhatsApp?',
+      '¿Quién es más probable que vomite primero esta noche?',
+      '¿Quién es más probable que pida plata prestada y nunca pague?',
+    ],
+    3: [
+      '¿Quién tiene el historial de navegación más turbio?',
+      '¿Quién es más probable que tenga un romance secreto ahora mismo?',
+      '¿Quién es más probable que termine preso por una tontera?',
+      '¿Quién es más probable que termine peleando con un guardia de disco?',
+      '¿Quién es más probable que sea funado en Twitter/X?',
+      '¿Quién es más probable que tenga hijos regados que no conoce?',
+      '¿Quién es más probable que se meta con el/la ex de un amigo?',
+      '¿Quién es más probable que despierte mañana en una casa desconocida?',
+      '¿Quién del grupo es el más mentiroso cuando anda arriba de la pelota?',
+      '¿Quién es más probable que haya fingido un orgasmo... hoy?',
+    ],
+  },
+  YN: {
+    1: [
+      'Yo nunca me he quedado dormido en plena previa.',
+      'Yo nunca he fingido que me gustaba un regalo.',
+      'Yo nunca he usado la cuenta de Netflix de un ex.',
+      'Yo nunca he cantado a gritos en la ducha.',
+      'Yo nunca he dicho "voy llegando" estando en la casa.',
+      'Yo nunca me he comido algo que se cayó al suelo.',
+      'Yo nunca he perdido una pelea que yo mismo empecé.',
+      'Yo nunca he llorado con una teleserie.',
+      'Yo nunca he stalkeado a alguien de este grupo.',
+    ],
+    2: [
+      'Yo nunca he mandado un mensaje caliente al chat equivocado.',
+      'Yo nunca he fingido estar enfermo para no trabajar después de un carrete.',
+      'Yo nunca he stalkeado al ex de mi pareja.',
+      'Yo nunca he vuelto con un ex sabiendo que era mala idea.',
+      'Yo nunca he hecho ghosting.',
+      'Yo nunca he llorado en el baño de una disco.',
+      'Yo nunca he coqueteado para conseguir algo gratis.',
+      'Yo nunca he revisado el celular de mi pareja a escondidas.',
+      'Yo nunca he tenido un peor es na\'.',
+      'Yo nunca he borrado una foto porque mi pareja se enojó.',
+    ],
+    3: [
+      'Yo nunca he besado a alguien de este grupo.',
+      'Yo nunca he tenido algo con alguien del trabajo.',
+      'Yo nunca he dicho "te amo" sin sentirlo.',
+      'Yo nunca me he arrancado sin pagar de un local.',
+      'Yo nunca he manejado sabiendo que no debía.',
+      'Yo nunca he vomitado en un auto ajeno.',
+      'Yo nunca he mentido en esta misma noche.',
+      'Yo nunca me he metido con alguien mucho mayor o mucho menor.',
+      'Yo nunca he hablado mal de alguien presente en esta sala.',
+      'Yo nunca he despertado sin saber dónde estaba.',
+    ],
+  },
+  RT: {
+    1: [
+      '🤳 Selfie grupal obligatoria AHORA. El que salga peor (votación rápida a mano alzada), toma.',
+      '🎤 El más joven del grupo canta 20 segundos de una canción que elija el más viejo.',
+      '🔄 Todos cambian de asiento un puesto a la derecha. El último en moverse, toma.',
+      '📱 Todos muestran la última foto de su galería. La más fome, toma su dueño.',
+      '🗣️ Cada uno imita a la persona de su derecha por 15 segundos. El peor, toma.',
+      '⏱️ Piedra, papel o tijera entre los dos más cercanos. El que pierde, toma.',
+    ],
+    2: [
+      '📵 Todos dejan el celular al centro de la mesa. El primero que lo agarre en la próxima ronda, toma doble.',
+      '🎭 El del cumpleaños más cercano actúa una película y el resto adivina. Si nadie adivina en 1 min, todos toman.',
+      '💬 Cada uno lee en voz alta el último mensaje de WhatsApp que MANDÓ. El más vergonzoso, toma.',
+      '👑 El más votado de la ronda anterior elige quién se manda un shot.',
+      '🍺 El último que llegó a la junta hoy, toma doble por atrasado.',
+      '🤫 Ronda de silencio: el primero que hable antes de la próxima carta, toma triple.',
+    ],
+    3: [
+      '📞 Alguien (elegido por el grupo) manda un audio diciendo "te echo de menos" a un contacto random. O toma triple.',
+      '💬 El grupo elige a alguien: debe mostrar su último chat de Instagram/WhatsApp o mandarse 2 shots.',
+      '🔥 Verdad o shot: el grupo le hace UNA pregunta a quien elijan. Responde con la verdad o se manda un shot.',
+      '🍻 ¡TODOS toman! Sin excusas, salud chanchos.',
+      '🎯 El grupo elige al que está más sobrio: se manda un shot para nivelar la cancha.',
+    ],
+  },
+};
 
-/* ============================================================
-   MÓDULO PRINCIPAL DEL JUEGO
-   ============================================================ */
+/* MÓDULO PRINCIPAL */
 const Game = (() => {
-  // ---- Estado local del cliente ----
   const S = {
-    canal: null,          // canal realtime de la sala
-    code: '',             // código de sala
-    soyHost: false,       // este dispositivo dirige el juego
+    canal: null, code: '', soyHost: false,
     yo: { id: null, name: '' },
-    jugadores: [],        // lista viva desde Presence [{id,name}]
-    // ---- Estado solo del host ----
-    deck: [],             // mazo barajado
-    ronda: 0,
-    votos: {},            // {playerId: eleccion}
-    estadoActual: null,   // último estado transmitido (para re-enviar a los que llegan tarde)
+    jugadores: [],
+    config: { modos: ['MP','YN','RT'], nivel: 2, custom: [] },
+    deck: [], ronda: 0, votos: {}, estadoActual: null,
   };
 
-  /* ---------- Utilidades ---------- */
   const $ = id => document.getElementById(id);
-  const show = id => ['scr-home','scr-lobby','scr-game'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+  const PANTALLAS = ['scr-home','scr-config','scr-lobby','scr-game'];
+  const show = id => PANTALLAS.forEach(s => $(s).classList.toggle('hidden', s !== id));
   const shuffle = a => a.map(x => [Math.random(), x]).sort((p,q) => p[0]-q[0]).map(p => p[1]);
   const genCode = () => Array.from({length:4}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random()*24)]).join('');
   const vibrar = ms => navigator.vibrate && navigator.vibrate(ms);
@@ -258,35 +409,35 @@ const Game = (() => {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
   };
+  const confetti = () => {
+    const emojis = ['🐷','🍻','🎉','✨','🐽'];
+    for (let i = 0; i < 18; i++) {
+      const c = document.createElement('div');
+      c.className = 'confetti'; c.textContent = emojis[i % emojis.length];
+      c.style.left = Math.random()*100 + 'vw';
+      c.style.animationDuration = (1.6 + Math.random()*1.6) + 's';
+      document.body.appendChild(c); setTimeout(() => c.remove(), 3400);
+    }
+  };
 
-  /* ---------- Conexión a la sala (host y jugadores) ---------- */
   async function conectar(code, esHost) {
     S.code = code; S.soyHost = esHost;
     S.yo.id = crypto.randomUUID();
-    S.canal = sb.channel('carrete-' + code, {
+    S.canal = sb.channel('porcina-' + code, {
       config: { broadcast: { self: true }, presence: { key: S.yo.id } }
     });
-
-    // Presence: lista viva de jugadores conectados
     S.canal.on('presence', { event: 'sync' }, () => {
       const st = S.canal.presenceState();
       S.jugadores = Object.values(st).map(arr => arr[0]).filter(p => p && p.name);
       pintarLobby();
-      // El host re-envía el estado actual para los que llegan tarde
       if (S.soyHost && S.estadoActual) transmitir(S.estadoActual);
     });
-
-    // Broadcast: estado del juego (lo envía solo el host)
     S.canal.on('broadcast', { event: 'estado' }, ({ payload }) => renderEstado(payload));
-    // Broadcast: votos (los recibe y cuenta solo el host)
     S.canal.on('broadcast', { event: 'voto' }, ({ payload }) => { if (S.soyHost) registrarVoto(payload); });
-
     await new Promise((res, rej) => {
       S.canal.subscribe(async status => {
-        if (status === 'SUBSCRIBED') {
-          await S.canal.track({ id: S.yo.id, name: S.yo.name });
-          res();
-        } else if (status === 'CHANNEL_ERROR') rej(new Error('No se pudo conectar'));
+        if (status === 'SUBSCRIBED') { await S.canal.track({ id: S.yo.id, name: S.yo.name }); res(); }
+        else if (status === 'CHANNEL_ERROR') rej(new Error('canal'));
       });
     });
   }
@@ -296,31 +447,49 @@ const Game = (() => {
     S.canal.send({ type: 'broadcast', event: 'estado', payload: estado });
   }
 
-  /* ---------- Acciones de pantalla de inicio ---------- */
   async function crearSala() {
     const name = $('inp-name').value.trim();
-    if (!name) return toast('Pon tu nombre primero po');
+    if (!name) return toast('Ponte un nombre primero 🐽');
     S.yo.name = name;
-    try {
-      await conectar(genCode(), true);
-      S.deck = shuffle(DECK);
-      mostrarLobby();
-    } catch { toast('Error de conexión, intenta de nuevo'); }
+    try { await conectar(genCode(), true); show('scr-config'); }
+    catch { toast('Error de conexión, intenta de nuevo'); }
   }
 
   async function unirseSala() {
     const name = $('inp-name').value.trim();
     const code = $('inp-code').value.trim().toUpperCase();
-    if (!name) return toast('Pon tu nombre primero po');
+    if (!name) return toast('Ponte un nombre primero 🐽');
     if (code.length !== 4) return toast('El código tiene 4 letras');
     S.yo.name = name;
-    try {
-      await conectar(code, false);
-      mostrarLobby();
-    } catch { toast('Error de conexión, revisa el código'); }
+    try { await conectar(code, false); mostrarLobby(); }
+    catch { toast('No se pudo entrar, revisa el código'); }
   }
 
-  /* ---------- Lobby ---------- */
+  function toggleModo(el) {
+    el.classList.toggle('on');
+    const activos = document.querySelectorAll('.opcion-toggle.on');
+    if (!activos.length) { el.classList.add('on'); return toast('Deja al menos un juego po'); }
+  }
+  function setNivel(el) {
+    document.querySelectorAll('.nivel').forEach(n => n.classList.remove('on'));
+    el.classList.add('on');
+  }
+  function abrirSala() {
+    S.config.modos = [...document.querySelectorAll('.opcion-toggle.on')].map(e => e.dataset.modo);
+    S.config.nivel = Number(document.querySelector('.nivel.on').dataset.nivel);
+    S.config.custom = $('inp-custom').value.split('\n').map(s => s.trim()).filter(s => s.length > 4);
+    S.deck = construirMazo();
+    mostrarLobby();
+  }
+  function construirMazo() {
+    let pool = [];
+    for (const modo of S.config.modos)
+      for (let n = 1; n <= S.config.nivel; n++)
+        pool = pool.concat(MAZOS[modo][n].map(q => ({ t: modo, q })));
+    pool = pool.concat(S.config.custom.map(q => ({ t: 'MP', q })));
+    return shuffle(pool);
+  }
+
   function mostrarLobby() {
     show('scr-lobby');
     $('lobby-code').textContent = S.code;
@@ -328,7 +497,6 @@ const Game = (() => {
     $('lobby-wait').classList.toggle('hidden', S.soyHost);
     pintarLobby();
   }
-
   function pintarLobby() {
     if ($('scr-lobby').classList.contains('hidden')) return;
     $('lobby-count').textContent = S.jugadores.length;
@@ -336,18 +504,26 @@ const Game = (() => {
       .map(p => `<span class="chip ${p.id === S.yo.id ? 'me' : ''}">${esc(p.name)}</span>`).join('');
   }
 
-  /* ---------- Lógica del HOST ---------- */
   function hostStart() {
-    if (S.jugadores.length < 2) return toast('Mínimo 2 jugadores po weon');
+    if (S.jugadores.length < 2) return toast('Mínimo 2 chanchos pa\' jugar 🐷');
     hostNext();
   }
 
+  const INSTRUCCIONES = {
+    MP: '👉 Vota en tu celular por la persona del grupo. El más votado, toma.',
+    YN: '🙊 Confiesa en secreto. Al final se revela quién sí lo ha hecho... y toma.',
+    RT: '🔥 Reto grupal: cúmplanlo y el anfitrión pasa a la siguiente.',
+  };
+
   function hostNext() {
-    if (!S.deck.length) S.deck = shuffle(DECK); // se acabó el mazo → rebarajar
+    if (!S.deck.length) S.deck = construirMazo();
     const carta = S.deck.pop();
     S.ronda++; S.votos = {};
-    const estado = { fase: 'pregunta', ronda: S.ronda, tipo: carta.t, q: carta.q };
-    if (carta.t === 'MP') estado.opciones = S.jugadores.map(p => p.name); // se vota entre los presentes
+    const estado = {
+      fase: 'pregunta', ronda: S.ronda, tipo: carta.t, q: carta.q,
+      instruccion: INSTRUCCIONES[carta.t], nJugadores: S.jugadores.length,
+    };
+    if (carta.t === 'MP') estado.opciones = S.jugadores.map(p => p.name);
     if (carta.t === 'YN') estado.opciones = ['🍺 Lo he hecho', '😇 Yo nunca'];
     transmitir(estado);
   }
@@ -355,8 +531,7 @@ const Game = (() => {
   function registrarVoto({ pid, eleccion }) {
     if (!S.estadoActual || S.estadoActual.fase !== 'pregunta') return;
     S.votos[pid] = eleccion;
-    const total = S.jugadores.length;
-    const van = Object.keys(S.votos).length;
+    const total = S.jugadores.length, van = Object.keys(S.votos).length;
     if (van >= total) hostReveal(false);
     else transmitir({ ...S.estadoActual, votosVan: van, votosTotal: total });
   }
@@ -366,63 +541,58 @@ const Game = (() => {
     if (!e || e.fase !== 'pregunta') return;
     let resultados = [], castigo = '';
     if (e.tipo === 'MP') {
-      // Conteo de votos por jugador nominado
       const tally = {};
       Object.values(S.votos).forEach(v => tally[v] = (tally[v] || 0) + 1);
       resultados = Object.entries(tally).sort((a,b) => b[1]-a[1]).map(([name, n]) => ({ name, n }));
       const max = resultados.length ? resultados[0].n : 0;
       const ganadores = resultados.filter(r => r.n === max).map(r => r.name);
-      castigo = ganadores.length ? `🍻 ¡${ganadores.join(' y ')} toma${ganadores.length>1?'n':''}!` : 'Nadie votó... todos toman por fomes 🍻';
+      castigo = ganadores.length ? `🍻 ¡${ganadores.join(' y ')} toma${ganadores.length > 1 ? 'n' : ''}!` : '🍻 Nadie votó... ¡todos toman por fomes!';
     } else if (e.tipo === 'YN') {
-      // Se revela QUIÉN lo ha hecho (esa es la gracia)
       const hicieron = S.jugadores.filter(p => (S.votos[p.id] || '').includes('Lo he hecho')).map(p => p.name);
       resultados = S.jugadores.map(p => ({ name: p.name, n: (S.votos[p.id] || '').includes('Lo he hecho') ? 1 : 0 }));
-      castigo = hicieron.length ? `🍻 Toman: ${hicieron.join(', ')}` : '😇 Puros santos... el Gordo Leo elige quién toma igual';
+      castigo = hicieron.length ? `🍻 Toman: ${hicieron.join(', ')}` : '😇 Puros santos en esta sala... sospechoso.';
     }
-    transmitir({ fase: 'reveal', ronda: e.ronda, tipo: e.tipo, q: e.q, resultados, castigo, forzado });
+    transmitir({ fase: 'reveal', ronda: e.ronda, tipo: e.tipo, q: e.q, resultados, castigo, nJugadores: S.jugadores.length });
   }
 
-  /* ---------- Render (todos los clientes) ---------- */
   function renderEstado(e) {
     show('scr-game');
     $('g-round').textContent = 'Ronda ' + e.ronda;
-    const tipos = { MP: ['mp','¿Quién es más probable?'], YN: ['yn','Yo Nunca'], CS: ['cs','⚡ Carta del Cumpleañero'] };
+    $('g-sala').textContent = S.code;
+    $('g-nplayers').textContent = e.nJugadores || S.jugadores.length;
+    const tipos = { MP: ['mp','👉 ¿Quién es más probable?'], YN: ['yn','🙊 Yo Nunca'], RT: ['rt','🔥 Reto'] };
     const [cls, label] = tipos[e.tipo];
     $('g-type').className = 'qtype ' + cls;
     $('g-type').textContent = label;
-    $('g-question').textContent = e.q;
-    $('btn-next').classList.add('hidden');
-    $('btn-reveal').classList.add('hidden');
-    $('g-castigo').classList.add('hidden');
-    $('g-results').classList.add('hidden');
-    $('g-wait').classList.add('hidden');
+    $('g-question').textContent = e.tipo === 'RT' ? '' : e.q;
+    $('g-instruccion').textContent = e.instruccion || '';
+    ['btn-next','btn-reveal','g-castigo','g-results','g-progreso','g-reto','g-host-wait'].forEach(id => $(id).classList.add('hidden'));
 
     if (e.fase === 'pregunta') {
-      if (e.tipo === 'CS') {
-        // Carta castigo: no se vota, solo se cumple
+      if (e.tipo === 'RT') {
         $('g-opts').innerHTML = '';
-        $('g-castigo').classList.remove('hidden');
-        $('g-castigo').textContent = '¡A cumplir la carta!';
+        $('g-reto').classList.remove('hidden');
+        $('g-reto').textContent = e.q;
         if (S.soyHost) $('btn-next').classList.remove('hidden');
-        vibrar(200);
+        else $('g-host-wait').classList.remove('hidden');
+        vibrar(150);
         return;
       }
-      const yaVote = e.votosVan !== undefined && $('g-opts').dataset.voted === String(e.ronda);
-      if (yaVote) {
+      const yaVoteEstaRonda = $('g-opts').dataset.voted === String(e.ronda);
+      if (yaVoteEstaRonda) {
         $('g-opts').innerHTML = '';
-        $('g-wait').classList.remove('hidden');
-        $('g-wait').textContent = `Votaste ✔ · van ${e.votosVan}/${e.votosTotal}...`;
-      } else if ($('g-opts').dataset.voted !== String(e.ronda)) {
-        // Voto por ÍNDICE (no por texto) para evitar problemas con comillas en nombres
+        pintarProgreso(e);
+      } else {
         S.opcionesActuales = e.opciones;
         $('g-opts').innerHTML = e.opciones
           .map((o, i) => `<button class="opt" onclick="Game.votar(this,${i},${e.ronda})">${esc(o)}</button>`).join('');
+        if (e.votosVan !== undefined) pintarProgreso(e, true);
       }
       if (S.soyHost && e.votosVan !== undefined) $('btn-reveal').classList.remove('hidden');
     }
 
     if (e.fase === 'reveal') {
-      vibrar([80,40,80]);
+      vibrar([80,40,80]); confetti();
       $('g-opts').innerHTML = '';
       $('g-opts').dataset.voted = '';
       const max = Math.max(1, ...e.resultados.map(r => r.n));
@@ -435,31 +605,40 @@ const Game = (() => {
       $('g-castigo').classList.remove('hidden');
       $('g-castigo').textContent = e.castigo;
       if (S.soyHost) $('btn-next').classList.remove('hidden');
+      else $('g-host-wait').classList.remove('hidden');
     }
   }
 
-  /* ---------- Votar (jugadores) ---------- */
+  function pintarProgreso(e, compacto) {
+    $('g-progreso').classList.remove('hidden');
+    const van = e.votosVan || 0, total = e.votosTotal || e.nJugadores || S.jugadores.length;
+    $('g-progreso-fill').style.width = (total ? van/total*100 : 0) + '%';
+    $('g-progreso-txt').textContent = compacto
+      ? `${van}/${total} ya votaron`
+      : `Votaste ✔ · van ${van}/${total}... apurando a los lentos 🐌`;
+  }
+
   function votar(btn, idx, ronda) {
     const eleccion = (S.opcionesActuales || [])[idx];
     if (eleccion === undefined) return;
     document.querySelectorAll('.opt').forEach(b => b.classList.remove('sel'));
     btn.classList.add('sel');
-    $('g-opts').dataset.voted = String(ronda); // evita doble voto en la misma ronda
+    $('g-opts').dataset.voted = String(ronda);
     S.canal.send({ type: 'broadcast', event: 'voto', payload: { pid: S.yo.id, eleccion } });
     setTimeout(() => {
       $('g-opts').innerHTML = '';
-      $('g-wait').classList.remove('hidden');
-      $('g-wait').textContent = 'Votaste ✔ esperando al resto...';
-    }, 250);
+      pintarProgreso(S.estadoActual || { votosVan: 1, votosTotal: S.jugadores.length });
+    }, 220);
     vibrar(40);
   }
 
-  /* ---------- Sanitización básica anti-XSS ---------- */
+  function ayuda(abrir) { $('modal-ayuda').classList.toggle('hidden', !abrir); }
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  return { crearSala, unirseSala, hostStart, hostNext, hostReveal, votar };
+  return { crearSala, unirseSala, toggleModo, setNivel, abrirSala, hostStart, hostNext, hostReveal, votar, ayuda };
 })();
 </script>
 </body>
